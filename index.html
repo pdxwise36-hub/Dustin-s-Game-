@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Never Have I Ever: Pride Edition</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌈</text></svg>" />
+<style>
+  :root{
+    --bg:#12081f;
+    --bg2:#1c0f2e;
+    --card:#221334;
+    --text:#fdf6ff;
+    --muted:#c3b0d8;
+    --accent:#ff2d78;
+    --accent2:#ffb703;
+    --ok:#2ee6a6;
+    --danger:#ff5c5c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin:0; padding:0; height:100%; overscroll-behavior:none;
+    background: radial-gradient(1200px 800px at 50% -10%, #3a1f57 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select:none;
+  }
+  #app { position: fixed; inset:0; overflow:hidden; }
+  .screen { position:absolute; inset:0; display:none; flex-direction:column; }
+  .screen.active { display:flex; }
+  .scroll { overflow-y:auto; -webkit-overflow-scrolling:touch; }
+
+  /* ---------- shared bits ---------- */
+  .rainbow-text{
+    background: linear-gradient(90deg,#ff2d55,#ff9f1c,#ffe066,#2ee6a6,#3a86ff,#c77dff);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .btn{
+    border:none; border-radius:16px; font-weight:800; letter-spacing:.02em;
+    font-size:1.05rem; padding:16px 20px; cursor:pointer; color:#160a24;
+    background: linear-gradient(135deg,var(--accent2),var(--accent));
+    box-shadow: 0 6px 0 rgba(0,0,0,.35);
+    transition: transform .08s ease;
+  }
+  .btn:active{ transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+  .btn.secondary{
+    background:transparent; color:var(--text); border:2px solid #4a3465; box-shadow:none;
+  }
+  .btn.secondary:active{ transform: translateY(2px); }
+  .btn:disabled{ opacity:.4; filter:grayscale(.5); box-shadow:none; }
+  input[type="text"]{
+    background: var(--bg2); border:2px solid #4a3465; border-radius:14px; color:var(--text);
+    padding:14px 16px; font-size:1.05rem; outline:none; width:100%;
+  }
+  input[type="text"]:focus{ border-color: var(--accent); }
+
+  /* ================= SETUP / GATE ================= */
+  #gate, #setup{ padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); align-items:center; justify-content:center; text-align:center; gap:18px; }
+  #gate .mark, #setup .mark{ font-size:2.4rem; font-weight:900; }
+  #gate p, #setup p.sub{ color:var(--muted); max-width:520px; line-height:1.5; margin:0; }
+
+  #setup{ justify-content:flex-start; padding-top:max(28px, env(safe-area-inset-top)); }
+  .setup-wrap{ width:100%; max-width:520px; margin:0 auto; display:flex; flex-direction:column; gap:16px; flex:1; min-height:0; }
+  .add-row{ display:flex; gap:10px; }
+  .add-row .btn{ padding:14px 18px; white-space:nowrap; }
+  #playerList{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; overflow-y:auto; flex:1; min-height:80px; }
+  #playerList li{
+    display:flex; align-items:center; gap:12px; background:var(--card); border:2px solid #3a2554;
+    border-radius:14px; padding:10px 12px;
+  }
+  .swatch{ width:34px; height:34px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-weight:800; color:#160a24; }
+  .pname{ flex:1; font-weight:700; text-align:left; }
+  .rm{ background:none; border:none; color:var(--muted); font-size:1.3rem; cursor:pointer; padding:4px 8px; }
+  .rm:active{ color:var(--danger); }
+  .hint{ font-size:.85rem; color:var(--muted); }
+  #startBtn{ width:100%; font-size:1.15rem; padding:18px; }
+
+  /* ================= GAME ================= */
+  #game.active{
+    display:grid;
+    grid-template-areas: "top top top" "left center right" "bottom bottom bottom";
+    grid-template-columns: minmax(64px,auto) 1fr minmax(64px,auto);
+    grid-template-rows: minmax(64px,auto) 1fr minmax(64px,auto);
+    height:100%;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    gap:6px;
+  }
+  .edge{ display:flex; align-items:center; justify-content:center; gap:8px; padding:6px; overflow:auto; }
+  #edgeTop{ grid-area: top; flex-wrap:wrap; }
+  #edgeBottom{ grid-area: bottom; flex-wrap:wrap; }
+  #edgeLeft{ grid-area:left; flex-direction:column; }
+  #edgeRight{ grid-area:right; flex-direction:column; }
+
+  .pbtn{
+    min-width:64px; min-height:64px; border-radius:16px; border:2px solid #4a3465;
+    background: var(--card); color:var(--text); font-weight:800; font-size:.78rem;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    padding:6px 8px; cursor:pointer; line-height:1.1; text-align:center;
+    transition: transform .08s ease, background .12s ease, border-color .12s ease;
+  }
+  .pbtn .dot{ width:10px; height:10px; border-radius:50%; background:#4a3465; }
+  .pbtn.on{ background: linear-gradient(135deg,var(--ok),#0fb98a); border-color:var(--ok); color:#062018; }
+  .pbtn.on .dot{ background:#062018; }
+  .pbtn:active{ transform:scale(.94); }
+  #edgeTop .pbtn{ transform: rotate(180deg); }
+  #edgeTop .pbtn:active{ transform: rotate(180deg) scale(.94); }
+  #edgeLeft .pbtn{ transform: rotate(90deg); }
+  #edgeLeft .pbtn:active{ transform: rotate(90deg) scale(.94); }
+  #edgeRight .pbtn{ transform: rotate(-90deg); }
+  #edgeRight .pbtn:active{ transform: rotate(-90deg) scale(.94); }
+
+  #center{ grid-area:center; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:10px; min-height:0; }
+  .progress{ display:flex; gap:6px; }
+  .progress .seg{ width:22px; height:6px; border-radius:4px; background:#3a2554; }
+  .progress .seg.filled{ background: var(--accent2); }
+  .promptCard{
+    background: var(--card); border:2px solid #3a2554; border-radius:22px; padding:22px 20px;
+    max-width:min(88vw, 460px); text-align:center; box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .promptCard .never{ color:var(--accent2); font-weight:900; letter-spacing:.04em; font-size:.85rem; text-transform:uppercase; margin-bottom:6px; }
+  .promptCard .txt{ font-size:1.35rem; font-weight:700; line-height:1.3; }
+  #nextBtn{ font-size:1.1rem; padding:16px 28px; }
+  .miniRow{ display:flex; gap:10px; align-items:center; }
+  .iconbtn{ background:transparent; border:2px solid #4a3465; color:var(--muted); border-radius:12px; padding:8px 12px; font-size:.85rem; cursor:pointer; }
+
+  /* ================= ROUND RESULTS ================= */
+  #results{ align-items:center; justify-content:center; text-align:center; padding:24px; gap:14px; }
+  #results h2{ margin:0; font-size:1.6rem; }
+  #results .drinkline{ font-size:3rem; }
+  #resultList{ list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; width:100%; max-width:420px; max-height:40vh; overflow-y:auto; }
+  #resultList li{ display:flex; align-items:center; gap:10px; background:var(--card); border:2px solid #3a2554; border-radius:12px; padding:10px 14px; }
+  #resultList li .rname{ flex:1; text-align:left; font-weight:700; }
+  #resultList li .rcount{ font-weight:800; color:var(--muted); }
+  #resultList li.loser{ border-color: var(--danger); background: linear-gradient(135deg,#3a1030,#2a0e28); }
+  #resultList li.loser .rcount{ color:#ffb4b4; }
+
+  #final{ align-items:center; justify-content:center; text-align:center; padding:24px; gap:14px; }
+
+  footer.note{ font-size:.7rem; color:var(--muted); opacity:.7; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== AGE / CONSENT GATE ===== -->
+  <div class="screen active" id="gate">
+    <div class="mark rainbow-text">🌈 Never Have I Ever</div>
+    <div class="mark" style="font-size:1.2rem;">Pride Edition</div>
+    <p>This deck is explicit, adult, and honest — it goes there. Everyone playing needs to be <strong>18+</strong> and okay with graphic sexual confessions. You're in control of who's around the table.</p>
+    <button class="btn" id="gateBtn">We're all 18+, let's play</button>
+    <footer class="note">Private party game &middot; not for minors</footer>
+  </div>
+
+  <!-- ===== SETUP ===== -->
+  <div class="screen" id="setup">
+    <div class="setup-wrap">
+      <div class="mark rainbow-text" style="font-size:1.4rem;">Who's playing?</div>
+      <p class="sub" style="margin:0 0 4px;">Add every player around the phone. You can add as many as you want — buttons wrap around all four edges.</p>
+      <div class="add-row">
+        <input type="text" id="nameInput" placeholder="Player name" maxlength="16" autocomplete="off" />
+        <button class="btn" id="addBtn">Add</button>
+      </div>
+      <ul id="playerList"></ul>
+      <div class="hint" id="countHint">0 players added &middot; need at least 2</div>
+      <button class="btn" id="startBtn" disabled>Start Game</button>
+    </div>
+  </div>
+
+  <!-- ===== GAME ===== -->
+  <div class="screen" id="game">
+    <div class="edge" id="edgeTop"></div>
+    <div class="edge" id="edgeLeft"></div>
+    <div id="center">
+      <div class="progress" id="progress"></div>
+      <div class="promptCard">
+        <div class="never">Never have I ever&hellip;</div>
+        <div class="txt" id="promptText">&mdash;</div>
+      </div>
+      <button class="btn" id="nextBtn">Locked it in &rarr; Next</button>
+      <div class="miniRow">
+        <button class="iconbtn" id="scoreBtn">🏆 Scoreboard</button>
+        <button class="iconbtn" id="endBtn">End Game</button>
+      </div>
+    </div>
+    <div class="edge" id="edgeRight"></div>
+    <div class="edge" id="edgeBottom"></div>
+  </div>
+
+  <!-- ===== ROUND RESULTS ===== -->
+  <div class="screen" id="results">
+    <div class="drinkline">🍻</div>
+    <h2>Round Over</h2>
+    <div id="loserLine" style="font-weight:800; font-size:1.15rem;"></div>
+    <ul id="resultList"></ul>
+    <button class="btn" id="nextRoundBtn">Next Round &rarr;</button>
+  </div>
+
+  <!-- ===== FINAL / SCOREBOARD ===== -->
+  <div class="screen" id="final">
+    <div class="mark rainbow-text" style="font-size:1.4rem;" id="finalTitle">Scoreboard</div>
+    <ul id="finalList" style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; width:100%; max-width:420px; max-height:48vh; overflow-y:auto;"></ul>
+    <div id="finalCrowns" style="font-weight:700; color:var(--muted);"></div>
+    <div class="miniRow">
+      <button class="btn secondary" id="backToGameBtn">Back to Game</button>
+      <button class="btn" id="playAgainBtn">Play Again</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var TOPICS = [
+    "Taken a load from behind and later ‘farted’ with cum leaking out",
+    "Enjoyed gagging on a long cock while giving head",
+    "Given a hand job while driving",
+    "Jacked off and came while driving",
+    "Performed road head on the interstate",
+    "Received road head on the interstate",
+    "Had anal sex in the front seat of a car",
+    "Sat on a car's gear shift to pleasure myself",
+    "Had any type of sexual encounter in a church",
+    "Had sex with someone 3 times my age",
+    "Used Crisco as lube",
+    "Used olive or cooking oil as lube",
+    "Stuck a fruit or vegetable in my ass",
+    "Carved a hole and fucked a melon or other fruit/vegetable",
+    "Used a solid cock ring (glass, metal, or plastic)",
+    "Worn a jock to work",
+    "Own or wear chaps",
+    "Had a dildo or butt plug in while out in public or driving",
+    "Used a screwdriver, hammer handle, or other tool as a dildo",
+    "Had a consensual sexual encounter with a blood relative as an adult (18+)",
+    "Jacked off from smelling someone else's clothing without their knowledge",
+    "Licked fresh cum off a ‘cum rag’ after the person left",
+    "Gotten fully hard — maybe even pre-cum — just from someone's smell nearby",
+    "Dated or gotten close to someone mainly to get closer to a family member of theirs",
+    "Accidentally came in my own eye while jacking off",
+    "Smelled a crusty sock at a friend's house and got turned on",
+    "Had anal sex of any kind in a public place, like a store aisle or a home-improvement demo shed",
+    "Had to pull over and jack off after getting denied sex on a date",
+    "Jacked someone off under a coat or jacket in a movie theater",
+    "Been to the preview booth at an adult video store",
+    "Gotten a blowjob at a video booth glory hole",
+    "Sucked a cock through a glory hole",
+    "Told someone to stop talking during sex because their voice killed the mood",
+    "Been a bottom and genuinely unsure whether he was inside you or not",
+    "Licked the remaining cum off a cock that had just come in your ass",
+    "Come just from rubbing my cock through my pants while fully dressed",
+    "Used a ‘massager’ on my dick to get myself off",
+    "Been blindfolded during sex by someone I'd just met",
+    "Been fucked in a sex sling",
+    "Been fucked by a mechanical fuck machine",
+    "Sat on a rim chair",
+    "Own 2+ dildos too big to use yet, but I'm ‘working up to it’",
+    "Own a rim chair",
+    "Licked the drips of piss off after a straight friend used my toilet",
+    "Recorded myself having sex without the other person's knowledge",
+    "Used cum in a food preparation",
+    "Told someone in person that they lied about their penis size"
+  ];
+
+  var COLORS = ["#ff2d55","#ff9f1c","#ffe066","#2ee6a6","#3a86ff","#c77dff","#ff70a6","#70e4ef","#f15bb5","#9b5de5"];
+
+  var players = [];      // {id,name,color,round,total,answered}
+  var deck = [];
+  var deckIndex = 0;
+  var lastPromptShown = null;
+  var promptInRound = 0;
+  var ROUND_SIZE = 5;
+  var currentPromptText = "";
+  var nextPlayerId = 1;
+
+  var $ = function(id){ return document.getElementById(id); };
+  function show(screenId){
+    document.querySelectorAll(".screen").forEach(function(s){ s.classList.remove("active"); });
+    $(screenId).classList.add("active");
+  }
+  function shuffle(arr){
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--){
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
+  // ---------- GATE ----------
+  $("gateBtn").addEventListener("click", function(){ show("setup"); });
+
+  // ---------- SETUP ----------
+  function renderPlayerList(){
+    var ul = $("playerList");
+    ul.innerHTML = "";
+    players.forEach(function(p){
+      var li = document.createElement("li");
+      var initial = p.name.trim().charAt(0).toUpperCase() || "?";
+      li.innerHTML =
+        '<div class="swatch" style="background:' + p.color + '">' + initial + '</div>' +
+        '<div class="pname"></div>' +
+        '<button class="rm" aria-label="Remove">&times;</button>';
+      li.querySelector(".pname").textContent = p.name;
+      li.querySelector(".rm").addEventListener("click", function(){
+        players = players.filter(function(x){ return x.id !== p.id; });
+        renderPlayerList();
+      });
+      ul.appendChild(li);
+    });
+    var n = players.length;
+    $("countHint").textContent = n + " player" + (n === 1 ? "" : "s") + " added" + (n < 2 ? " · need at least 2" : "");
+    $("startBtn").disabled = n < 2;
+  }
+
+  function addPlayer(){
+    var input = $("nameInput");
+    var name = input.value.trim();
+    if (!name) return;
+    players.push({
+      id: nextPlayerId++,
+      name: name,
+      color: COLORS[(players.length) % COLORS.length],
+      round: 0,
+      total: 0,
+      answered: false
+    });
+    input.value = "";
+    input.focus();
+    renderPlayerList();
+  }
+  $("addBtn").addEventListener("click", addPlayer);
+  $("nameInput").addEventListener("keydown", function(e){
+    if (e.key === "Enter") addPlayer();
+  });
+
+  // ---------- GAME SETUP ----------
+  function assignEdges(){
+    ["edgeTop","edgeBottom","edgeLeft","edgeRight"].forEach(function(id){ $(id).innerHTML = ""; });
+    var edgeIds = ["edgeTop","edgeBottom","edgeLeft","edgeRight"];
+    players.forEach(function(p, i){
+      var edgeId = edgeIds[i % 4];
+      var btn = document.createElement("button");
+      btn.className = "pbtn";
+      btn.dataset.pid = p.id;
+      btn.style.borderColor = p.color;
+      btn.innerHTML = '<span class="dot"></span><span class="lbl"></span>';
+      btn.querySelector(".lbl").textContent = p.name;
+      btn.addEventListener("click", function(){ toggleAnswer(p.id); });
+      $(edgeId).appendChild(btn);
+    });
+  }
+
+  function drawDeck(){
+    deck = shuffle(TOPICS);
+    deckIndex = 0;
+    if (deck[0] === lastPromptShown && deck.length > 1) {
+      var tmp = deck[0]; deck[0] = deck[1]; deck[1] = tmp;
+    }
+  }
+
+  function nextPrompt(){
+    if (deckIndex >= deck.length) drawDeck();
+    currentPromptText = deck[deckIndex++];
+    lastPromptShown = currentPromptText;
+    players.forEach(function(p){ p.answered = false; });
+    renderPrompt();
+    renderPlayerButtons();
+  }
+
+  function renderPrompt(){
+    $("promptText").textContent = currentPromptText;
+    var prog = $("progress");
+    prog.innerHTML = "";
+    for (var i = 0; i < ROUND_SIZE; i++){
+      var seg = document.createElement("div");
+      seg.className = "seg" + (i < promptInRound ? " filled" : "");
+      prog.appendChild(seg);
+    }
+  }
+
+  function renderPlayerButtons(){
+    players.forEach(function(p){
+      var btn = document.querySelector('.pbtn[data-pid="' + p.id + '"]');
+      if (!btn) return;
+      btn.classList.toggle("on", p.answered);
+    });
+  }
+
+  function toggleAnswer(pid){
+    var p = players.find(function(x){ return x.id === pid; });
+    if (!p) return;
+    p.answered = !p.answered;
+    p.round += p.answered ? 1 : -1;
+    p.total += p.answered ? 1 : -1;
+    renderPlayerButtons();
+  }
+
+  function startGame(){
+    players.forEach(function(p){ p.round = 0; p.total = 0; p.answered = false; });
+    promptInRound = 0;
+    lastPromptShown = null;
+    drawDeck();
+    assignEdges();
+    nextPrompt();
+    show("game");
+  }
+  $("startBtn").addEventListener("click", startGame);
+
+  $("nextBtn").addEventListener("click", function(){
+    promptInRound++;
+    if (promptInRound >= ROUND_SIZE){
+      showRoundResults();
+    } else {
+      renderPrompt();
+      nextPrompt();
+    }
+  });
+
+  // ---------- ROUND RESULTS ----------
+  function showRoundResults(){
+    var minRound = Math.min.apply(null, players.map(function(p){ return p.round; }));
+    var losers = players.filter(function(p){ return p.round === minRound; });
+    var sorted = players.slice().sort(function(a,b){ return b.round - a.round; });
+
+    $("loserLine").textContent = losers.length > 1
+      ? losers.map(function(p){ return p.name; }).join(" & ") + " tied for last — everybody drinks!"
+      : losers[0].name + " confessed the least — drink up! 🍸";
+
+    var ul = $("resultList");
+    ul.innerHTML = "";
+    sorted.forEach(function(p){
+      var li = document.createElement("li");
+      var isLoser = p.round === minRound;
+      li.className = isLoser ? "loser" : "";
+      li.innerHTML =
+        '<div class="swatch" style="background:' + p.color + '; width:26px; height:26px; font-size:.75rem;">' +
+          (p.name.charAt(0).toUpperCase()) +
+        '</div>' +
+        '<div class="rname"></div>' +
+        '<div class="rcount"></div>';
+      li.querySelector(".rname").textContent = p.name + (isLoser ? " 🍻" : "");
+      li.querySelector(".rcount").textContent = p.round + " / " + ROUND_SIZE;
+      ul.appendChild(li);
+    });
+
+    show("results");
+  }
+
+  $("nextRoundBtn").addEventListener("click", function(){
+    players.forEach(function(p){ p.round = 0; p.answered = false; });
+    promptInRound = 0;
+    nextPrompt();
+    show("game");
+  });
+
+  // ---------- SCOREBOARD / END ----------
+  function renderFinal(title){
+    $("finalTitle").textContent = title;
+    var sorted = players.slice().sort(function(a,b){ return b.total - a.total; });
+    var ul = $("finalList");
+    ul.innerHTML = "";
+    sorted.forEach(function(p, i){
+      var li = document.createElement("li");
+      li.style.cssText = "display:flex;align-items:center;gap:10px;background:var(--card);border:2px solid #3a2554;border-radius:12px;padding:10px 14px;";
+      li.innerHTML =
+        '<div style="font-weight:900;color:var(--muted);width:22px;">#' + (i+1) + '</div>' +
+        '<div class="swatch" style="background:' + p.color + '; width:28px; height:28px; font-size:.75rem;">' + p.name.charAt(0).toUpperCase() + '</div>' +
+        '<div style="flex:1;text-align:left;font-weight:700;"></div>' +
+        '<div style="font-weight:800;color:var(--muted);"></div>';
+      li.children[2].textContent = p.name;
+      li.children[3].textContent = p.total + " total";
+      ul.appendChild(li);
+    });
+    if (sorted.length){
+      var wildest = sorted[0], vanilla = sorted[sorted.length - 1];
+      $("finalCrowns").innerHTML = "🔥 Wildest: <strong>" + wildest.name + "</strong> &nbsp;&middot;&nbsp; 🧊 Most Vanilla: <strong>" + vanilla.name + "</strong>";
+    } else {
+      $("finalCrowns").textContent = "";
+    }
+  }
+
+  $("scoreBtn").addEventListener("click", function(){
+    renderFinal("Scoreboard");
+    show("final");
+  });
+  $("endBtn").addEventListener("click", function(){
+    renderFinal("Final Results");
+    show("final");
+  });
+  $("backToGameBtn").addEventListener("click", function(){ show("game"); });
+  $("playAgainBtn").addEventListener("click", function(){ show("setup"); });
+
+  renderPlayerList();
+})();
+</script>
+</body>
+</html>
