@@ -1,0 +1,71 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - "android-app/**"
+      - ".github/workflows/build-apk.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform & build-tools
+        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Install app dependencies
+        working-directory: android-app
+        run: npm install
+
+      - name: Sync Capacitor
+        working-directory: android-app
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android-app/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK with run number
+        working-directory: android-app/android
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/never-have-i-ever-pride-edition.apk
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: never-have-i-ever-apk
+          path: android-app/android/app/build/outputs/apk/debug/never-have-i-ever-pride-edition.apk
+
+      - name: Publish GitHub Release with APK asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-build-${{ github.run_number }}
+          name: "Android build #${{ github.run_number }}"
+          body: |
+            Sideloadable APK built from commit ${{ github.sha }}.
+
+            On your phone: download the `.apk` file below, open it, and allow
+            "install from unknown sources" if prompted. This is a debug build
+            signed with a throwaway key, so if you're replacing an earlier
+            install and Android complains about a signature mismatch,
+            uninstall the old one first.
+          files: android-app/android/app/build/outputs/apk/debug/never-have-i-ever-pride-edition.apk
+          prerelease: true
