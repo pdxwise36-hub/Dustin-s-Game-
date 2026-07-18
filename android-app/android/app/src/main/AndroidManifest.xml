@@ -35,4 +35,7 @@
         </provider>
     </application>
 
+    <!-- Needed for online multiplayer (PeerJS/WebRTC signaling + STUN/TURN) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 </manifest>
