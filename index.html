@@ -167,6 +167,11 @@
   .modal-overlay{ position:fixed; inset:0; background:rgba(10,4,20,.72); display:flex; align-items:center; justify-content:center; padding:20px; z-index:60; }
   .modal-overlay .promptCard{ width:100%; max-height:88vh; overflow-y:auto; }
   .modal-overlay .wc-copy{ color:var(--muted); font-size:.85rem; margin:8px 0 12px; line-height:1.4; }
+  .howto-mainrule{
+    background: linear-gradient(135deg, rgba(255,45,120,.18), rgba(255,183,3,.18));
+    border:2px solid var(--accent2); border-radius:14px; padding:12px 14px; margin-top:14px;
+    font-weight:800; font-size:.95rem; text-align:center; line-height:1.4; color:var(--text);
+  }
   .howto-list{ list-style:none; margin:14px 0; padding:0; display:flex; flex-direction:column; gap:10px; font-size:.9rem; line-height:1.4; color:var(--text); }
   .howto-checkbox{ display:flex; align-items:center; gap:8px; font-size:.85rem; color:var(--muted); }
   .howto-checkbox input{ width:16px; height:16px; flex:0 0 auto; }
@@ -413,8 +418,9 @@
   <div class="modal-overlay" id="howToPlayModal" style="display:none;">
     <div class="promptCard" style="max-width:440px; text-align:left;">
       <div class="never" style="text-align:center;">🎮 How to Play</div>
+      <div class="howto-mainrule">"Never have I ever…" — if you HAVE done the thing, you must click the button. That's the whole rule.</div>
       <ul class="howto-list">
-        <li>🫵 Each player taps <strong>their own button</strong> on the edge of the phone when a prompt is true for them.</li>
+        <li>📍 Your button is on <strong>your edge</strong> of the phone — tap again to undo a misclick.</li>
         <li>🔄 Not feeling a prompt? Tap <strong>Skip this one</strong> to reroll it — free, doesn't count against the round.</li>
         <li>🍻 After 5 prompts, whoever tapped the <strong>fewest times</strong> drinks. Ties mean everyone tied drinks.</li>
         <li>🎲 Sometimes a <strong>Wildcard round</strong> hits — the game picks a random player who has to invent their own topic on the spot.</li>
@@ -429,9 +435,10 @@
   <div class="modal-overlay" id="guestHowToModal" style="display:none;">
     <div class="promptCard" style="max-width:420px; text-align:left;">
       <div class="never" style="text-align:center;">🎮 You're In!</div>
+      <div class="howto-mainrule">"Never have I ever…" — if you HAVE done the thing, you must click the button. That's the whole rule.</div>
       <ul class="howto-list">
         <li>📱 The host controls the game from their phone — prompts show up here on yours too.</li>
-        <li>🫵 Tap the big button if a prompt is true for you. Tap again to undo.</li>
+        <li>👆 Tap again to undo a misclick.</li>
         <li>🍻 After 5 prompts, whoever tapped the fewest times drinks — you're counted right alongside everyone at the table.</li>
         <li>🎲 If you get picked for a Wildcard round, you'll type your own topic right here on your phone.</li>
       </ul>
