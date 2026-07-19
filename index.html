@@ -181,6 +181,25 @@
 
   #final{ align-items:center; justify-content:center; text-align:center; padding:24px; gap:14px; }
 
+  #skipBtn{ padding:10px 20px; font-size:.9rem; }
+
+  .recap-card{
+    position:relative; overflow:hidden;
+    background: var(--card); border:2px solid #3a2554; border-radius:24px; padding:26px 20px 22px;
+    width:100%; max-width:420px; display:flex; flex-direction:column; align-items:center; gap:12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .recap-card::before{
+    content:""; position:absolute; top:0; left:0; right:0; height:6px;
+    background: linear-gradient(90deg,#ff2d55,#ff9f1c,#ffe066,#2ee6a6,#3a86ff,#c77dff);
+  }
+  .recap-meta{ color:var(--muted); font-size:.8rem; }
+  .recap-list{ list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; width:100%; max-height:38vh; overflow-y:auto; }
+  .recap-list li{ display:flex; align-items:center; gap:10px; background:var(--bg2); border:2px solid #3a2554; border-radius:12px; padding:10px 14px; }
+  .recap-list .medal{ width:24px; text-align:center; font-size:1.05rem; flex:0 0 auto; }
+  .recap-crowns{ font-weight:700; color:var(--muted); font-size:.92rem; }
+  .recap-extra{ font-weight:700; color:var(--muted); font-size:.85rem; min-height:1.2em; }
+
   footer.note{ font-size:.7rem; color:var(--muted); opacity:.7; }
 
   /* ================= ONLINE / JOIN ================= */
@@ -282,9 +301,11 @@
         <div class="txt" id="promptText">&mdash;</div>
       </div>
       <button class="btn normalPlay" id="nextBtn">Locked it in &rarr; Next</button>
+      <button class="btn secondary normalPlay" id="skipBtn">🔄 Skip this one</button>
       <div class="miniRow normalPlay">
         <button class="iconbtn" id="scoreBtn">🏆 Scoreboard</button>
         <button class="iconbtn" id="quickTopicBtn">➕ Topic</button>
+        <button class="iconbtn sound-toggle" id="soundToggleBtn">🔊</button>
         <button class="iconbtn" id="endBtn">End Game</button>
       </div>
       <div class="online-chip normalPlay" id="onlineChip" style="display:none;">
@@ -317,17 +338,23 @@
 
   <!-- ===== FINAL / SCOREBOARD ===== -->
   <div class="screen" id="final">
-    <div class="mark rainbow-text" style="font-size:1.4rem;" id="finalTitle">Scoreboard</div>
-    <ul id="finalList" style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; width:100%; max-width:420px; max-height:48vh; overflow-y:auto;"></ul>
-    <div id="finalCrowns" style="font-weight:700; color:var(--muted);"></div>
+    <div class="recap-card" id="recapCard">
+      <div class="mark rainbow-text" style="font-size:1.4rem;" id="finalTitle">Scoreboard</div>
+      <div class="recap-meta" id="recapMeta"></div>
+      <ul id="finalList" class="recap-list"></ul>
+      <div id="finalCrowns" class="recap-crowns"></div>
+      <div id="recapExtra" class="recap-extra"></div>
+    </div>
     <div class="miniRow">
       <button class="btn secondary" id="backToGameBtn">Back to Game</button>
+      <button class="btn secondary" id="shareRecapBtn">📤 Share Recap</button>
       <button class="btn" id="playAgainBtn">Play Again</button>
     </div>
   </div>
 
   <!-- ===== REMOTE GUEST GAME (mirrors the host's state) ===== -->
   <div class="screen" id="remoteGame">
+    <button class="iconbtn sound-toggle" id="rgSoundToggleBtn" style="position:absolute; top:max(14px, env(safe-area-inset-top)); right:14px;">🔊</button>
     <div class="rg-panel" id="rgPlayPanel">
       <div class="progress" id="rgProgress"></div>
       <div class="promptCard">
@@ -523,6 +550,13 @@
   var currentPromptAuthor = null; // player name if this prompt came from a Wildcard round
   var nextPlayerId = 1;
   var wildcardWinner = null;
+  var roundsCompleted = 0;
+
+  var SOUND_KEY = "nhie_sound_pref";
+  var soundEnabled = (function(){
+    try { var v = localStorage.getItem(SOUND_KEY); return v === null ? true : v === "1"; } catch (e) { return true; }
+  })();
+  var audioCtx = null;
 
   var ROOM_PREFIX = "nhie-";
   var onlinePeer = null;        // this device's PeerJS Peer instance (host or guest)
@@ -538,6 +572,59 @@
     document.querySelectorAll(".screen").forEach(function(s){ s.classList.remove("active"); });
     $(screenId).classList.add("active");
   }
+  // ---------- SOUND + HAPTICS (synthesized, no audio files) ----------
+  function ensureAudioCtx(){
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(function(){});
+    return audioCtx;
+  }
+  function playTone(freq, duration, type, startDelay, gainPeak){
+    var ctx = ensureAudioCtx();
+    if (!ctx || !soundEnabled) return;
+    var t0 = ctx.currentTime + (startDelay || 0);
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(gainPeak || 0.15, t0 + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.02);
+  }
+  function playNoiseTick(duration, gainPeak){
+    var ctx = ensureAudioCtx();
+    if (!ctx || !soundEnabled) return;
+    var bufferSize = Math.max(1, Math.floor(ctx.sampleRate * duration));
+    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    var src = ctx.createBufferSource();
+    src.buffer = buffer;
+    var gain = ctx.createGain();
+    gain.gain.setValueAtTime(gainPeak || 0.2, ctx.currentTime);
+    src.connect(gain).connect(ctx.destination);
+    src.start();
+  }
+  function soundTap(){ playNoiseTick(0.02, 0.18); }
+  function soundConfirm(){ playTone(520, 0.09, "square", 0, 0.1); }
+  function soundSpinTick(){ playNoiseTick(0.03, 0.22); }
+  function soundWildcardLand(){ playTone(660, 0.18, "triangle", 0, 0.14); playTone(880, 0.22, "triangle", 0.05, 0.12); }
+  function soundGlassClink(){ playTone(1800, 0.5, "sine", 0, 0.1); playTone(2400, 0.4, "sine", 0.02, 0.07); playTone(3100, 0.3, "sine", 0.04, 0.05); }
+  function hapticTap(){ if (navigator.vibrate) navigator.vibrate(15); }
+  function hapticWin(){ if (navigator.vibrate) navigator.vibrate([20, 40, 20]); }
+  function hapticLoss(){ if (navigator.vibrate) navigator.vibrate([15, 30, 15, 30, 15]); }
+  function feedbackTap(){ soundTap(); hapticTap(); }
+  function feedbackConfirm(){ soundConfirm(); hapticTap(); }
+  function setSoundEnabled(on){
+    soundEnabled = on;
+    try { localStorage.setItem(SOUND_KEY, on ? "1" : "0"); } catch (e) { /* session-only */ }
+    document.querySelectorAll(".sound-toggle").forEach(function(btn){ btn.textContent = on ? "🔊" : "🔇"; });
+  }
+
   function shuffle(arr){
     var a = arr.slice();
     for (var i = a.length - 1; i > 0; i--){
@@ -632,7 +719,8 @@
       color: COLORS[(players.length) % COLORS.length],
       round: 0,
       total: 0,
-      answered: false
+      answered: false,
+      timesLowest: 0
     });
     input.value = "";
     input.focus();
@@ -680,7 +768,7 @@
       btn.style.borderColor = p.color;
       btn.innerHTML = '<span class="dot"></span><span class="lbl"></span>';
       btn.querySelector(".lbl").textContent = p.name;
-      btn.addEventListener("click", function(){ toggleAnswer(p.id); });
+      btn.addEventListener("click", function(){ feedbackTap(); toggleAnswer(p.id); });
       $(edgeId).appendChild(btn);
     });
   }
@@ -694,7 +782,11 @@
   }
 
   function setNormalPlayVisible(visible){
-    document.querySelectorAll(".normalPlay").forEach(function(el){ el.style.display = visible ? "" : "none"; });
+    document.querySelectorAll(".normalPlay").forEach(function(el){
+      if (el.id === "onlineChip") return; // has its own visibility rule below, not just show/hide-all
+      el.style.display = visible ? "" : "none";
+    });
+    $("onlineChip").style.display = (visible && isOnlineHost) ? "inline-flex" : "none";
     $("wildcardBox").style.display = visible ? "none" : "flex";
   }
 
@@ -747,8 +839,9 @@
   }
 
   function startGame(){
-    players.forEach(function(p){ p.round = 0; p.total = 0; p.answered = false; });
+    players.forEach(function(p){ p.round = 0; p.total = 0; p.answered = false; p.timesLowest = 0; });
     promptInRound = 0;
+    roundsCompleted = 0;
     lastPromptShown = null;
     setNormalPlayVisible(true);
     drawDeck();
@@ -759,6 +852,7 @@
   $("startBtn").addEventListener("click", startGame);
 
   $("nextBtn").addEventListener("click", function(){
+    feedbackConfirm();
     promptInRound++;
     if (promptInRound >= ROUND_SIZE){
       showRoundResults();
@@ -766,6 +860,19 @@
       nextPrompt();
     }
   });
+
+  function skipPrompt(){
+    feedbackTap();
+    players.forEach(function(p){
+      if (p.answered) { p.answered = false; p.round -= 1; p.total -= 1; }
+    });
+    renderPlayerButtons();
+    nextPrompt();
+  }
+  $("skipBtn").addEventListener("click", skipPrompt);
+
+  $("soundToggleBtn").addEventListener("click", function(){ setSoundEnabled(!soundEnabled); feedbackTap(); });
+  $("rgSoundToggleBtn").addEventListener("click", function(){ setSoundEnabled(!soundEnabled); feedbackTap(); });
 
   // ---------- WILDCARD ROUND ----------
   function startWildcard(){
@@ -813,6 +920,7 @@
     var btn = document.querySelector('.pbtn[data-pid="' + p.id + '"]');
     if (btn) btn.classList.add(isFinal ? "spin-winner" : "spin-live");
     $("wcName").textContent = p.name;
+    if (isFinal) { soundWildcardLand(); hapticWin(); } else { soundSpinTick(); }
   }
 
   function revealWildcardEntry(winner){
@@ -847,6 +955,7 @@
   }
 
   function submitWildcard(){
+    feedbackConfirm();
     applyWildcardTopic($("wcInput").value.trim(), wildcardWinner);
   }
   $("wcSubmitBtn").addEventListener("click", submitWildcard);
@@ -857,6 +966,10 @@
     var minRound = Math.min.apply(null, players.map(function(p){ return p.round; }));
     var losers = players.filter(function(p){ return p.round === minRound; });
     var sorted = players.slice().sort(function(a,b){ return b.round - a.round; });
+    roundsCompleted++;
+    losers.forEach(function(p){ p.timesLowest = (p.timesLowest || 0) + 1; });
+    soundGlassClink();
+    hapticLoss();
 
     $("loserLine").textContent = losers.length > 1
       ? losers.map(function(p){ return p.name; }).join(" & ") + " tied for last — everybody drinks!"
@@ -892,43 +1005,88 @@
   });
 
   // ---------- SCOREBOARD / END ----------
+  var MEDALS = ["🥇", "🥈", "🥉"];
+
+  function sortedByTotal(){
+    return players.slice().sort(function(a, b){ return b.total - a.total; });
+  }
+
   function renderFinal(title){
     $("finalTitle").textContent = title;
-    var sorted = players.slice().sort(function(a,b){ return b.total - a.total; });
+    var sorted = sortedByTotal();
     var ul = $("finalList");
     ul.innerHTML = "";
     sorted.forEach(function(p, i){
       var li = document.createElement("li");
-      li.style.cssText = "display:flex;align-items:center;gap:10px;background:var(--card);border:2px solid #3a2554;border-radius:12px;padding:10px 14px;";
       li.innerHTML =
-        '<div style="font-weight:900;color:var(--muted);width:22px;">#' + (i+1) + '</div>' +
+        '<div class="medal"></div>' +
         '<div class="swatch" style="background:' + p.color + '; width:28px; height:28px; font-size:.75rem;">' + p.name.charAt(0).toUpperCase() + '</div>' +
         '<div style="flex:1;text-align:left;font-weight:700;"></div>' +
         '<div style="font-weight:800;color:var(--muted);"></div>';
+      li.querySelector(".medal").textContent = MEDALS[i] || ("#" + (i + 1));
       li.children[2].textContent = p.name;
       li.children[3].textContent = p.total + " total";
       ul.appendChild(li);
     });
+
+    var dateStr = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    $("recapMeta").textContent = dateStr + " · " + players.length + " player" + (players.length === 1 ? "" : "s") +
+      " · " + roundsCompleted + " round" + (roundsCompleted === 1 ? "" : "s") + " played";
+
     if (sorted.length){
       var wildest = sorted[0], vanilla = sorted[sorted.length - 1];
       $("finalCrowns").innerHTML = "🔥 Wildest: <strong>" + wildest.name + "</strong> &nbsp;&middot;&nbsp; 🧊 Most Vanilla: <strong>" + vanilla.name + "</strong>";
+      var mostLosses = players.slice().sort(function(a, b){ return (b.timesLowest || 0) - (a.timesLowest || 0); })[0];
+      $("recapExtra").textContent = (mostLosses && mostLosses.timesLowest > 0)
+        ? ("🍻 Drank the most: " + mostLosses.name + " (" + mostLosses.timesLowest + " round" + (mostLosses.timesLowest === 1 ? "" : "s") + ")")
+        : "";
     } else {
       $("finalCrowns").textContent = "";
+      $("recapExtra").textContent = "";
     }
   }
 
+  function buildRecapText(){
+    var sorted = sortedByTotal();
+    var lines = ["🌈 Never Have I Ever: Pride Edition — Recap"];
+    sorted.forEach(function(p, i){
+      lines.push((MEDALS[i] || ("#" + (i + 1))) + " " + p.name + " — " + p.total + " confessions");
+    });
+    if (sorted.length){
+      lines.push("🔥 Wildest: " + sorted[0].name);
+      lines.push("🧊 Most Vanilla: " + sorted[sorted.length - 1].name);
+    }
+    return lines.join("\n");
+  }
+
   $("scoreBtn").addEventListener("click", function(){
+    feedbackTap();
     renderFinal("Scoreboard");
     show("final");
     syncOnline();
   });
   $("endBtn").addEventListener("click", function(){
+    feedbackTap();
     renderFinal("Final Results");
     show("final");
     syncOnline();
   });
   $("backToGameBtn").addEventListener("click", function(){ show("game"); syncOnline(); });
   $("playAgainBtn").addEventListener("click", function(){ show("setup"); });
+  $("shareRecapBtn").addEventListener("click", function(){
+    feedbackTap();
+    var text = buildRecapText();
+    if (navigator.share) {
+      navigator.share({ title: "Never Have I Ever Recap", text: text }).catch(function(){});
+    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){
+        var btn = $("shareRecapBtn");
+        var original = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(function(){ btn.textContent = original; }, 1500);
+      }).catch(function(){});
+    }
+  });
 
   // ================= ONLINE MULTIPLAYER (PeerJS) =================
   // Host and guest both use the public PeerJS cloud broker by default (no
@@ -1006,7 +1164,7 @@
         id: nextPlayerId++,
         name: name,
         color: COLORS[players.length % COLORS.length],
-        round: 0, total: 0, answered: false,
+        round: 0, total: 0, answered: false, timesLowest: 0,
         remote: true, connId: conn.peer
       };
       players.push(player);
@@ -1132,7 +1290,14 @@
     $(id).style.display = "flex";
   }
 
+  var lastRemoteScreen = null;
   function renderRemoteState(snap){
+    var enteringResults = snap.screen === "results" && lastRemoteScreen !== "results";
+    var enteringYourTurn = snap.screen === "yourWildcardTurn" && lastRemoteScreen !== "yourWildcardTurn";
+    lastRemoteScreen = snap.screen;
+    if (enteringResults) { soundGlassClink(); hapticLoss(); }
+    if (enteringYourTurn) { soundWildcardLand(); hapticWin(); }
+
     if (snap.screen === "results") {
       showRemotePanel("rgResultsPanel");
       $("rgLoserLine").textContent = snap.results.loserLine;
@@ -1186,11 +1351,13 @@
   }
 
   $("rgToggleBtn").addEventListener("click", function(){
+    feedbackTap();
     if (guestConn) guestConn.send({ type: "toggle" });
   });
   $("rgWildcardSubmit").addEventListener("click", function(){
     var text = $("rgWildcardInput").value.trim();
     if (!text || !guestConn) return;
+    feedbackConfirm();
     guestConn.send({ type: "wildcardTopic", text: text });
     showRemotePanel("rgWaitPanel");
     $("rgWaitText").textContent = "Nice — waiting for everyone to answer it…";
@@ -1211,6 +1378,7 @@
 
   renderPlayerList();
   renderCustomTopicList();
+  setSoundEnabled(soundEnabled);
 })();
 </script>
 </body>
