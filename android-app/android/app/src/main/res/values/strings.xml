@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Never Have I Ever</string>
+    <string name="title_activity_main">Never Have I Ever</string>
+    <string name="package_name">com.pridegame.nhie</string>
+    <string name="custom_url_scheme">com.pridegame.nhie</string>
+</resources>
